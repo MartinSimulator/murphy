@@ -16,6 +16,7 @@
     - `paths.py` - Runtime user-data location (`~/Library/Application Support/Murphy/`)
     - `/app` - Runtime state machine (`idle`, `listening`, `executing`, ...)
     - `/policy` - Deterministic auto-pass / confirm / deny gate
+      - `intent.py` - ActionIntent model and canonical digest (content fingerprint) for action identity
     - `/audit` - SQLite journal of proposals, decisions, and outcomes
     - `/mcp` - MCP client and sole `ToolGateway` used to call tools
     - `/execution` - Sequential runner for authorized actions
