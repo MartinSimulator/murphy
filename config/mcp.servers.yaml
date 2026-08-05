@@ -1,0 +1,31 @@
+# Checked-in MCP server defaults (stdio). Paths and secrets are not stored here.
+# User-local overrides belong under ~/Library/Application Support/Murphy/.
+
+version: 1
+
+servers:
+  git:
+    enabled: true
+    transport: stdio
+    command: null
+    args: []
+  docker:
+    enabled: true
+    transport: stdio
+    command: null
+    args: []
+  wezterm:
+    enabled: true
+    transport: stdio
+    command: null
+    args: []
+  cursor:
+    enabled: true
+    transport: stdio
+    command: null
+    args: []
+  spotify:
+    enabled: true
+    transport: stdio
+    command: null
+    args: []

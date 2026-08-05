@@ -1,0 +1,36 @@
+# Checked-in safe defaults for the three-tier policy gateway.
+# Mutable overrides belong under ~/Library/Application Support/Murphy/.
+# Tiers: auto_pass | confirm_required | deny
+
+version: 1
+
+# Hard-deny targets regardless of tool (resolved paths).
+deny_roots:
+  - /
+  - ~
+  - /etc
+
+# Default tier by MCP server + tool. Argument-sensitive rules come later.
+tool_tiers:
+  git.status: auto_pass
+  git.current_branch: auto_pass
+  git.commit: auto_pass
+  git.push: confirm_required
+  docker.compose_up: auto_pass
+  docker.compose_down: auto_pass
+  docker.run_service: auto_pass
+  docker.list_containers: auto_pass
+  docker.prune: confirm_required
+  wezterm.open_workspace: auto_pass
+  wezterm.open_pane: auto_pass
+  cursor.open_app: auto_pass
+  cursor.open_project: auto_pass
+  spotify.play: auto_pass
+  spotify.pause: auto_pass
+  spotify.skip: auto_pass
+  spotify.resume: auto_pass
+
+# Protected git refs that elevate push to confirm_required even if tier changes.
+protected_branches:
+  - main
+  - master
