@@ -6,7 +6,9 @@ authors = [
     { name = "Martin Sim", email = "martin.simulator@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+]
 
 [project.scripts]
 murphy = "murphy.cli:main"
