@@ -1,0 +1,17 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "all",
+        "volumes"
+    ],
+    "properties": {
+        "all": {
+            "type": "boolean"
+        },
+        "volumes": {
+            "type": "boolean"
+        }
+    }
+}

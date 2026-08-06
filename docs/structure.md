@@ -9,6 +9,7 @@
 - `/config` - Checked-in safe defaults (user secrets and mutable state live under Application Support)
   - `policy.defaults.yaml` - Default risk tiers, deny roots, and protected branches for the policy gateway
   - `mcp.servers.yaml` - Which MCP integrations exist and how they are launched (stdio)
+  - `/schemas` - JSON Schemas for each narrow tool (`git.push.json`, `docker.prune.json`, ...)
 - `/src`
   - `/murphy` - Installable application package
     - `__init__.py` - Package version and public identity
@@ -17,7 +18,9 @@
     - `/app` - Runtime state machine (`idle`, `listening`, `executing`, ...)
     - `/policy` - Deterministic auto-pass / confirm / deny gate
       - `intent.py` - ActionIntent model and canonical digest (content fingerprint) for action identity
+      - `schema.py` - Validate tool arguments against checked-in JSON Schemas before an ActionIntent is built
     - `/audit` - SQLite journal of proposals, decisions, and outcomes
+
     - `/mcp` - MCP client and sole `ToolGateway` used to call tools
     - `/execution` - Sequential runner for authorized actions
     - `/orchestrator` - LLM adapter and planning loop

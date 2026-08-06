@@ -13,6 +13,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from murphy.policy.schema import validate_tool_args
+
 from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 
 # Define the possible side effects of an intent
@@ -147,5 +149,24 @@ def build_action_intent(
         tool=tool,
         args=args,
         project_root=Path(project_root),
+        side_effect=side_effect,
+    )
+
+# Function to build an immutable ActionIntent with a digest bound to its canonical fields and validated arguments
+def build_validated_action_intent(
+    *, # * indicates that the following parameters are keyword-only (e.g. server="git", tool="push", etc.)
+    server: str,
+    tool: str,
+    args: Mapping[str, Any],
+    project_root: Path | str,
+    side_effect: SideEffect,
+) -> ActionIntent:
+    # validate_tool_args raises SchemaValidationError on failure; returns typed args on success
+    validated_args = validate_tool_args(server, tool, args)
+    return build_action_intent(
+        server=server,
+        tool=tool,
+        args=validated_args,
+        project_root=project_root,
         side_effect=side_effect,
     )
