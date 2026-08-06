@@ -1,8 +1,14 @@
 # Checked-in MCP server defaults (stdio). Paths and secrets are not stored here.
 # User-local overrides belong under ~/Library/Application Support/Murphy/.
 
+# Version of the MCP server configuration file.
 version: 1
 
+# Map of MCP server names to their configuration.
+#     - enabled: this server should be enabled by default
+#     - transport: communicate over standard input/output
+#     - command: the command to run the server (null means executable isn't specified yet)
+#     - args: arguments to pass to the server (empty means no arguments are specified yet)
 servers:
   git:
     enabled: true

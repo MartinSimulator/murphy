@@ -12,19 +12,29 @@ deny_roots:
 
 # Default tier by MCP server + tool. Argument-sensitive rules come later.
 tool_tiers:
+
+  # Git
   git.status: auto_pass
   git.current_branch: auto_pass
   git.commit: auto_pass
   git.push: confirm_required
+
+  # Docker
   docker.compose_up: auto_pass
   docker.compose_down: auto_pass
   docker.run_service: auto_pass
   docker.list_containers: auto_pass
   docker.prune: confirm_required
+
+  # WezTerm
   wezterm.open_workspace: auto_pass
   wezterm.open_pane: auto_pass
+
+  # Cursor
   cursor.open_app: auto_pass
   cursor.open_project: auto_pass
+
+  # Spotify
   spotify.play: auto_pass
   spotify.pause: auto_pass
   spotify.skip: auto_pass
