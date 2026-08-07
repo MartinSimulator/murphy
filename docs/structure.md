@@ -34,3 +34,9 @@
 
 ## Note:
 ActionIntent is the request form; ToolGateway.call is submitting that form to the right department; ToolResult is the stamped reply. Policy decides whether you’re allowed to submit the form; the gateway only handles submission.
+
+## Note #2:
+To run the test suite, run the following commands in order
+`export PATH="$HOME/.local/bin:$PATH"`
+`uv sync --group dev`
+`uv run pytest -v`

@@ -1,0 +1,18 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "service"
+    ],
+    "properties": {
+        "service": {
+            "type": "string",
+            "minLength": 1
+        },
+        "command": {
+            "type": "string",
+            "minLength": 1
+        }
+    }
+}
