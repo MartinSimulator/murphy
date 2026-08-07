@@ -32,3 +32,5 @@
   - `test_scaffold.py` - Smoke tests that the package, CLI, paths, and config files exist
   - `test_policy_decisions.py` - Decision-table tests for policy tiers, schema rejection, and audit journal
 
+## Note:
+ActionIntent is the request form; ToolGateway.call is submitting that form to the right department; ToolResult is the stamped reply. Policy decides whether you’re allowed to submit the form; the gateway only handles submission.

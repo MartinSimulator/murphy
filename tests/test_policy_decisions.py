@@ -24,7 +24,7 @@ def project_root(tmp_path: Path) -> Path:
     root.mkdir()
     return root
 
-
+# Test that git status auto-passes
 def test_git_status_auto_passes(project_root: Path) -> None:
     intent = build_action_intent(
         server="git",
@@ -40,6 +40,7 @@ def test_git_status_auto_passes(project_root: Path) -> None:
     assert decision.intent_digest == intent.digest
 
 
+# Test that feature branch pushes auto-pass
 def test_feature_branch_push_auto_passes(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="git",
@@ -54,6 +55,7 @@ def test_feature_branch_push_auto_passes(project_root: Path) -> None:
     assert decision.reason_code == PolicyReason.tool_default
 
 
+# Test that push to main requires confirmation
 def test_push_to_main_requires_confirmation(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="git",
@@ -67,7 +69,7 @@ def test_push_to_main_requires_confirmation(project_root: Path) -> None:
     assert decision.tier == PolicyTier.confirm_required
     assert decision.reason_code == PolicyReason.protected_branch
 
-
+# Test that push to master requires confirmation
 def test_push_to_master_requires_confirmation(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="git",
@@ -81,7 +83,7 @@ def test_push_to_master_requires_confirmation(project_root: Path) -> None:
     assert decision.tier == PolicyTier.confirm_required
     assert decision.reason_code == PolicyReason.protected_branch
 
-
+# Test that force push requires confirmation
 def test_force_push_requires_confirmation(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="git",
@@ -95,7 +97,7 @@ def test_force_push_requires_confirmation(project_root: Path) -> None:
     assert decision.tier == PolicyTier.confirm_required
     assert decision.reason_code == PolicyReason.force_push
 
-
+# Test that docker prune requires confirmation
 def test_docker_prune_requires_confirmation(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="docker",
@@ -109,7 +111,7 @@ def test_docker_prune_requires_confirmation(project_root: Path) -> None:
     assert decision.tier == PolicyTier.confirm_required
     assert decision.reason_code == PolicyReason.tool_default
 
-
+# Test that docker compose up auto-passes
 def test_docker_compose_up_auto_passes(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="docker",
@@ -123,7 +125,7 @@ def test_docker_compose_up_auto_passes(project_root: Path) -> None:
     assert decision.tier == PolicyTier.auto_pass
     assert decision.reason_code == PolicyReason.tool_default
 
-
+# Test that path outside project is denied
 def test_path_outside_project_is_denied(project_root: Path) -> None:
     intent = build_action_intent(
         server="cursor",
@@ -137,7 +139,7 @@ def test_path_outside_project_is_denied(project_root: Path) -> None:
     assert decision.tier == PolicyTier.deny
     assert decision.reason_code == PolicyReason.out_of_project
 
-
+# Test that /etc/passwd is denied
 def test_etc_path_is_denied(project_root: Path) -> None:
     intent = build_action_intent(
         server="cursor",
@@ -151,7 +153,7 @@ def test_etc_path_is_denied(project_root: Path) -> None:
     assert decision.tier == PolicyTier.deny
     assert decision.reason_code == PolicyReason.deny_root
 
-
+# Test that unknown tool is denied
 def test_unknown_tool_is_denied(project_root: Path) -> None:
     intent = build_action_intent(
         server="git",
@@ -165,7 +167,7 @@ def test_unknown_tool_is_denied(project_root: Path) -> None:
     assert decision.tier == PolicyTier.deny
     assert decision.reason_code == PolicyReason.unknown_tool
 
-
+# Test that invalid push args fail schema before policy
 def test_invalid_push_args_fail_schema_before_policy(project_root: Path) -> None:
     with pytest.raises(SchemaValidationError):
         build_validated_action_intent(
@@ -176,7 +178,7 @@ def test_invalid_push_args_fail_schema_before_policy(project_root: Path) -> None
             side_effect=SideEffect.mutative,
         )
 
-
+# Test that validate, classify, and journal round trip
 def test_validate_classify_and_journal_round_trip(project_root: Path) -> None:
     intent = build_validated_action_intent(
         server="git",
