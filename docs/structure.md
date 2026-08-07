@@ -30,4 +30,5 @@
     - `/ui` - macOS menu bar shell
 - `/tests`
   - `test_scaffold.py` - Smoke tests that the package, CLI, paths, and config files exist
+  - `test_policy_decisions.py` - Decision-table tests for policy tiers, schema rejection, and audit journal
 
