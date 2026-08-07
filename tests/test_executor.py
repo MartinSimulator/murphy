@@ -1,4 +1,4 @@
-"""Sequential executor tests: policy gating, ToolGateway dispatch, audit outcomes."""
+"""Sequential executor tests: policy gating, confirmation, ToolGateway, audit."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from murphy.audit.journal import AuditJournal
+from murphy.execution.confirmation import ConfirmationStore, PendingConfirmation
 from murphy.execution.executor import StepOutcome, execute_actions
 from murphy.mcp.fake_handlers.docker import docker_handler
 from murphy.mcp.fake_handlers.git import git_handler
@@ -96,7 +97,6 @@ def _prune(project_root: Path) -> ActionIntent:
 
 
 def _denied_path(project_root: Path) -> ActionIntent:
-    # cursor.open_project is in policy but path outside project hard-denies
     from murphy.policy.intent import build_action_intent
 
     return build_action_intent(
@@ -106,6 +106,10 @@ def _denied_path(project_root: Path) -> ActionIntent:
         project_root=project_root,
         side_effect=SideEffect.additive,
     )
+
+
+def _approve_with_expected_phrase(pending: PendingConfirmation) -> str:
+    return pending.expected_phrase
 
 
 # --- happy path ---
@@ -128,41 +132,130 @@ def test_all_auto_pass_actions_complete(
     assert plan.steps[0].tool_result.ok
 
 
-# --- confirm_required stops the plan ---
+# --- confirm_required without resolver pauses ---
 
-def test_confirm_required_stops_and_skips_later_actions(
+def test_confirm_required_pauses_and_skips_later_actions(
     project_root: Path,
     journal: AuditJournal,
 ) -> None:
     gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
     actions = [
         _status(project_root),
-        _main_push(project_root),  # confirm_required
-        _compose_up(project_root),  # must never run
+        _main_push(project_root),
+        _compose_up(project_root),
     ]
 
-    plan = execute_actions(actions, gateway, journal)
+    plan = execute_actions(actions, gateway, journal, confirmations=store)
 
     assert not plan.completed
     assert plan.stop_reason == StepOutcome.confirm_required
+    assert plan.pending is not None
+    assert plan.pending.expected_phrase == "confirm push to main"
+    assert store.get(plan.pending.intent_digest) is not None
     assert len(plan.steps) == 2
     assert plan.steps[0].outcome == StepOutcome.executed
     assert plan.steps[1].outcome == StepOutcome.confirm_required
-    assert plan.steps[1].tool_result is None
-    assert calls == ["git.status"]  # push and compose_up never dispatched
+    assert calls == ["git.status"]
 
 
-def test_docker_prune_stops_without_calling_handler(
+def test_docker_prune_pauses_without_calling_handler(
     project_root: Path,
     journal: AuditJournal,
 ) -> None:
     gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
 
-    plan = execute_actions([_prune(project_root)], gateway, journal)
+    plan = execute_actions(
+        [_prune(project_root)],
+        gateway,
+        journal,
+        confirmations=store,
+    )
 
     assert not plan.completed
     assert plan.stop_reason == StepOutcome.confirm_required
+    assert plan.pending is not None
+    assert plan.pending.expected_phrase == "confirm docker prune"
     assert calls == []
+
+
+# --- confirm_required with resolver ---
+
+def test_correct_phrase_executes_and_continues(
+    project_root: Path,
+    journal: AuditJournal,
+) -> None:
+    gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
+    main_push = _main_push(project_root)
+    actions = [_status(project_root), main_push, _compose_up(project_root)]
+
+    plan = execute_actions(
+        actions,
+        gateway,
+        journal,
+        confirmations=store,
+        resolve_confirmation=_approve_with_expected_phrase,
+        session_id="ok",
+    )
+
+    assert plan.completed
+    assert plan.stop_reason is None
+    assert calls == ["git.status", "git.push", "docker.compose_up"]
+    assert all(step.outcome == StepOutcome.executed for step in plan.steps)
+
+    rows = journal.fetch_by_digest(main_push.digest)
+    outcomes = [row["outcome"] for row in rows]
+    assert StepOutcome.confirm_required.value in outcomes
+    assert StepOutcome.confirmation_granted.value in outcomes
+    assert StepOutcome.executed.value in outcomes
+
+
+def test_bare_yes_denies_and_skips_tool(
+    project_root: Path,
+    journal: AuditJournal,
+) -> None:
+    gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
+
+    plan = execute_actions(
+        [_main_push(project_root), _compose_up(project_root)],
+        gateway,
+        journal,
+        confirmations=store,
+        resolve_confirmation=lambda _pending: "yes",
+    )
+
+    assert not plan.completed
+    assert plan.stop_reason == StepOutcome.confirmation_denied
+    assert calls == []
+
+
+def test_resolver_none_denies_without_tool_call(
+    project_root: Path,
+    journal: AuditJournal,
+) -> None:
+    gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
+    prune = _prune(project_root)
+
+    plan = execute_actions(
+        [prune],
+        gateway,
+        journal,
+        confirmations=store,
+        resolve_confirmation=lambda _pending: None,
+        session_id="deny-1",
+    )
+
+    assert not plan.completed
+    assert plan.stop_reason == StepOutcome.confirmation_denied
+    assert calls == []
+    rows = journal.fetch_by_digest(prune.digest)
+    outcomes = [row["outcome"] for row in rows]
+    assert StepOutcome.confirm_required.value in outcomes
+    assert StepOutcome.confirmation_denied.value in outcomes
 
 
 # --- deny stops the plan ---
@@ -220,7 +313,7 @@ def test_tool_error_stops_later_actions(
 
 # --- audit journal ---
 
-def test_executor_journals_outcomes(
+def test_executor_journals_pause_on_confirm(
     project_root: Path,
     journal: AuditJournal,
 ) -> None:
