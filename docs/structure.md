@@ -19,8 +19,9 @@
     - `/policy` - Deterministic auto-pass / confirm / deny gate
       - `intent.py` - ActionIntent model and canonical digest (content fingerprint) for action identity
       - `schema.py` - Validate tool arguments against checked-in JSON Schemas before an ActionIntent is built
+      - `gateway.py` - Three-tier policy classifier (auto_pass / confirm_required / deny)
     - `/audit` - SQLite journal of proposals, decisions, and outcomes
-
+      - `journal.py` - AuditJournal: append ActionIntent + PolicyDecision rows to SQLite
     - `/mcp` - MCP client and sole `ToolGateway` used to call tools
     - `/execution` - Sequential runner for authorized actions
     - `/orchestrator` - LLM adapter and planning loop

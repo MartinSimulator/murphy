@@ -7,7 +7,7 @@ version: 1
 # Hard-deny targets regardless of tool (resolved paths).
 deny_roots:
   - /
-  - ~
+  - "~"
   - /etc
 
 # Default tier by MCP server + tool. Argument-sensitive rules come later.
@@ -17,7 +17,7 @@ tool_tiers:
   git.status: auto_pass
   git.current_branch: auto_pass
   git.commit: auto_pass
-  git.push: confirm_required
+  git.push: auto_pass # Feature-branch pushes auto-pass; protected branches / force elevate in gateway.
 
   # Docker
   docker.compose_up: auto_pass
