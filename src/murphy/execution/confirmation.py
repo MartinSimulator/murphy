@@ -1,5 +1,6 @@
 # confirmation.py holds digest-bound, single-use, short-lived pending approvals.
 # The executor creates pendings on confirm_required; approve/deny never call tools.
+# Approval requires the codeword "confirm" plus an action token (e.g. push, prune).
 
 from __future__ import annotations
 
@@ -16,6 +17,8 @@ _DEFAULT_TTL = timedelta(seconds=60)
 # One wrong phrase is allowed; a second mismatch denies the pending confirmation
 _MAX_CLARIFICATIONS = 1
 _WHITESPACE = re.compile(r"\s+")
+_CODEWORD = "confirm" # Codeword for the confirmation
+_BARE_APPROVALS = frozenset({"yes", "ok", "y", "yeah"})
 
 
 # Pending wait-state for one confirm-required ActionIntent
@@ -24,7 +27,10 @@ class PendingConfirmation(BaseModel):
     intent: ActionIntent
     decision: PolicyDecision
     intent_digest: str
+    # Full prompt for TTS / UI (what Murphy asks the user)
     expected_phrase: str
+    # Tokens that must all appear as whole words in the user's reply
+    required_tokens: tuple[str, ...]
     created_at: datetime
     expires_at: datetime
     used: bool = False
@@ -60,7 +66,7 @@ def _normalize_phrase(phrase: str) -> str:
     return _WHITESPACE.sub(" ", phrase.strip().lower())
 
 
-# Build an action-bound phrase from the intent (not the digest)
+# TTS / UI prompt describing the action (does not need to match the reply exactly)
 def expected_phrase_for(intent: ActionIntent) -> str:
     if intent.server == "git" and intent.tool == "push":
         branch = str(intent.args.get("branch", ""))
@@ -72,6 +78,27 @@ def expected_phrase_for(intent: ActionIntent) -> str:
         return "confirm docker prune"
 
     return _normalize_phrase(f"confirm {intent.server} {intent.tool}")
+
+
+# Words the user must say (order does not matter; extras are allowed)
+def required_tokens_for(intent: ActionIntent) -> tuple[str, ...]:
+    if intent.server == "git" and intent.tool == "push":
+        return (_CODEWORD, "push")
+
+    if intent.server == "docker" and intent.tool == "prune":
+        return (_CODEWORD, "prune")
+
+    return (_CODEWORD, intent.tool)
+
+
+# Helper function to check if a phrase satisfies the required tokens
+def phrase_satisfies(phrase: str, required_tokens: tuple[str, ...]) -> bool:
+    """True when the reply contains every required token as a whole word."""
+    normalized = _normalize_phrase(phrase)
+    if not normalized or normalized in _BARE_APPROVALS:
+        return False
+    words = set(normalized.split())
+    return all(token in words for token in required_tokens)
 
 
 # In-memory store of pending confirmations keyed by intent digest
@@ -96,6 +123,7 @@ class ConfirmationStore:
             decision=decision,
             intent_digest=intent.digest,
             expected_phrase=expected_phrase_for(intent),
+            required_tokens=required_tokens_for(intent),
             created_at=now,
             expires_at=now + ttl,
             used=False,
@@ -130,11 +158,8 @@ class ConfirmationStore:
             )
 
         normalized = _normalize_phrase(phrase)
-        phrase_ok: bool = (
-            normalized not in {"yes", "ok", "y", "yeah"}
-            and normalized == pending.expected_phrase
-        )
-        if not phrase_ok:
+        tokens_hint = " and ".join(f"'{t}'" for t in pending.required_tokens)
+        if not phrase_satisfies(phrase, pending.required_tokens):
             # First mismatch: keep pending open and allow one clarification
             if pending.clarifications_used < _MAX_CLARIFICATIONS:
                 self._pending[digest] = pending.model_copy(
@@ -143,8 +168,7 @@ class ConfirmationStore:
                 return ConfirmationResult(
                     status=ConfirmationStatus.phrase_mismatch,
                     message=(
-                        f"Expected '{pending.expected_phrase}', "
-                        f"got '{normalized or phrase}'. "
+                        f"Say {tokens_hint} (got '{normalized or phrase}'). "
                         "One clarification attempt remaining."
                     ),
                     intent_digest=digest,
@@ -155,8 +179,7 @@ class ConfirmationStore:
             return ConfirmationResult(
                 status=ConfirmationStatus.denied,
                 message=(
-                    f"Expected '{pending.expected_phrase}', "
-                    f"got '{normalized or phrase}'. "
+                    f"Say {tokens_hint} (got '{normalized or phrase}'). "
                     "No clarification attempts remaining."
                 ),
                 intent_digest=digest,

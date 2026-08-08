@@ -109,7 +109,8 @@ def _denied_path(project_root: Path) -> ActionIntent:
 
 
 def _approve_with_expected_phrase(pending: PendingConfirmation) -> str:
-    return pending.expected_phrase
+    # Minimal reply that still satisfies required tokens
+    return " ".join(pending.required_tokens)
 
 
 # --- happy path ---
@@ -238,7 +239,7 @@ def test_clarification_then_correct_phrase_executes(
 ) -> None:
     gateway, calls = _tracking_gateway()
     store = ConfirmationStore()
-    answers = iter(["yes", "confirm push to main"])
+    answers = iter(["yes", "confirm push"])
 
     plan = execute_actions(
         [_main_push(project_root), _compose_up(project_root)],
