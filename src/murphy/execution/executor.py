@@ -50,7 +50,7 @@ class PlanResult(BaseModel):
     # Set when the plan paused on confirm_required without a resolver answer
     pending: PendingConfirmation | None = None
 
-
+# Helper function to dispatch a tool call
 def _dispatch_tool(
     action: ActionIntent,
     decision: PolicyDecision,
@@ -106,7 +106,7 @@ def execute_actions(
     then approve and execute or stop. If omitted, pause with pending set.
     """
     store = confirmations if confirmations is not None else ConfirmationStore()
-    steps: list[StepResult] = []
+    steps: list[StepResult] = [] # list of steps to execute
 
     for action in actions:
         decision = classify(action)
@@ -182,7 +182,20 @@ def execute_actions(
                 )
 
             confirmation = store.approve(pending.intent_digest, phrase)
-            if confirmation.status != ConfirmationStatus.granted:
+            # One clarification: ask the resolver again after a phrase mismatch
+            if confirmation.status == ConfirmationStatus.phrase_mismatch:
+                pending = store.get(pending.intent_digest) or pending
+                phrase = resolve_confirmation(pending)
+                if phrase is None:
+                    store.deny(pending.intent_digest)
+                    confirmation = None
+                else:
+                    confirmation = store.approve(pending.intent_digest, phrase)
+
+            if (
+                confirmation is None
+                or confirmation.status != ConfirmationStatus.granted
+            ):
                 journal.record_proposal(
                     action,
                     decision,

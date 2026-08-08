@@ -232,6 +232,26 @@ def test_bare_yes_denies_and_skips_tool(
     assert calls == []
 
 
+def test_clarification_then_correct_phrase_executes(
+    project_root: Path,
+    journal: AuditJournal,
+) -> None:
+    gateway, calls = _tracking_gateway()
+    store = ConfirmationStore()
+    answers = iter(["yes", "confirm push to main"])
+
+    plan = execute_actions(
+        [_main_push(project_root), _compose_up(project_root)],
+        gateway,
+        journal,
+        confirmations=store,
+        resolve_confirmation=lambda _pending: next(answers),
+    )
+
+    assert plan.completed
+    assert calls == ["git.push", "docker.compose_up"]
+
+
 def test_resolver_none_denies_without_tool_call(
     project_root: Path,
     journal: AuditJournal,

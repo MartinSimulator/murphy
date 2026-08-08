@@ -13,6 +13,8 @@ from murphy.policy.gateway import PolicyDecision
 from murphy.policy.intent import ActionIntent
 
 _DEFAULT_TTL = timedelta(seconds=60)
+# One wrong phrase is allowed; a second mismatch denies the pending confirmation
+_MAX_CLARIFICATIONS = 1
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -26,6 +28,8 @@ class PendingConfirmation(BaseModel):
     created_at: datetime
     expires_at: datetime
     used: bool = False
+    # How many phrase mismatches have already been consumed (0 or 1)
+    clarifications_used: int = 0
 
 
 # Outcome of an approve/deny attempt
@@ -33,7 +37,7 @@ class ConfirmationStatus(str, Enum):
     granted = "granted"
     denied = "denied"
     expired = "expired"
-    phrase_mismatch = "phrase_mismatch"
+    phrase_mismatch = "phrase_mismatch"  # wrong phrase; retry still allowed
     unknown_digest = "unknown_digest"
     already_used = "already_used"
 
@@ -95,6 +99,7 @@ class ConfirmationStore:
             created_at=now,
             expires_at=now + ttl,
             used=False,
+            clarifications_used=0,
         )
         self._pending[intent.digest] = pending
         return pending
@@ -125,12 +130,34 @@ class ConfirmationStore:
             )
 
         normalized = _normalize_phrase(phrase)
-        if normalized in {"yes", "ok", "y", "yeah"} or normalized != pending.expected_phrase:
+        phrase_ok: bool = (
+            normalized not in {"yes", "ok", "y", "yeah"}
+            and normalized == pending.expected_phrase
+        )
+        if not phrase_ok:
+            # First mismatch: keep pending open and allow one clarification
+            if pending.clarifications_used < _MAX_CLARIFICATIONS:
+                self._pending[digest] = pending.model_copy(
+                    update={"clarifications_used": pending.clarifications_used + 1}
+                )
+                return ConfirmationResult(
+                    status=ConfirmationStatus.phrase_mismatch,
+                    message=(
+                        f"Expected '{pending.expected_phrase}', "
+                        f"got '{normalized or phrase}'. "
+                        "One clarification attempt remaining."
+                    ),
+                    intent_digest=digest,
+                )
+
+            # Second mismatch: consume the pending (treat as denial)
+            self._pending[digest] = pending.model_copy(update={"used": True})
             return ConfirmationResult(
-                status=ConfirmationStatus.phrase_mismatch,
+                status=ConfirmationStatus.denied,
                 message=(
                     f"Expected '{pending.expected_phrase}', "
-                    f"got '{normalized or phrase}'"
+                    f"got '{normalized or phrase}'. "
+                    "No clarification attempts remaining."
                 ),
                 intent_digest=digest,
             )

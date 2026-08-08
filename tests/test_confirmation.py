@@ -95,3 +95,33 @@ def test_expired_pending_cannot_approve(project_root: Path) -> None:
     result = store.approve(intent.digest, "confirm push to main")
 
     assert result.status == ConfirmationStatus.expired
+
+
+def test_first_phrase_mismatch_allows_clarification(project_root: Path) -> None:
+    intent = _main_push(project_root)
+    store = ConfirmationStore()
+    store.create(intent, classify(intent))
+
+    first = store.approve(intent.digest, "yes")
+    pending = store.get(intent.digest)
+    second = store.approve(intent.digest, "confirm push to main")
+
+    assert first.status == ConfirmationStatus.phrase_mismatch
+    assert pending is not None
+    assert pending.clarifications_used == 1
+    assert not pending.used
+    assert second.status == ConfirmationStatus.granted
+
+
+def test_second_phrase_mismatch_denies(project_root: Path) -> None:
+    intent = _main_push(project_root)
+    store = ConfirmationStore()
+    store.create(intent, classify(intent))
+
+    first = store.approve(intent.digest, "yes")
+    second = store.approve(intent.digest, "ok")
+    third = store.approve(intent.digest, "confirm push to main")
+
+    assert first.status == ConfirmationStatus.phrase_mismatch
+    assert second.status == ConfirmationStatus.denied
+    assert third.status == ConfirmationStatus.already_used
