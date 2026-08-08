@@ -1,0 +1,29 @@
+# Side effects are the impact of a command on the system.
+
+version: 1
+
+# read-only | additive | mutative | destructive
+# Keys match server.tool identity used by schemas and policy tiers.
+
+side_effects:
+  git.status: read-only
+  git.current_branch: read-only
+  git.commit: additive
+  git.push: mutative
+
+  docker.compose_up: additive
+  docker.compose_down: mutative
+  docker.run_service: additive
+  docker.list_containers: read-only
+  docker.prune: destructive
+
+  wezterm.open_workspace: additive
+  wezterm.open_pane: additive
+
+  cursor.open_app: additive
+  cursor.open_project: additive
+
+  spotify.play: mutative
+  spotify.pause: mutative
+  spotify.skip: mutative
+  spotify.resume: mutative
