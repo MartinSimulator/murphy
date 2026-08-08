@@ -1,5 +1,7 @@
 # Project Folder Structure
 
+ActionIntent is the request form; ToolGateway.call is submitting that form to the right server; ToolResult is the reply. Policy decides whether you’re allowed to submit the form; the gateway only handles submission.
+
 - `pyproject.toml` - Package metadata, Python 3.12, CLI entry point, pytest config, dependencies
 - `uv.lock` - Locked dependency versions for reproducible installs
 - `.python-version` - Pins the project to Python 3.12 for uv
@@ -32,11 +34,22 @@
   - `test_scaffold.py` - Smoke tests that the package, CLI, paths, and config files exist
   - `test_policy_decisions.py` - Decision-table tests for policy tiers, schema rejection, and audit journal
 
-## Note:
-ActionIntent is the request form; ToolGateway.call is submitting that form to the right department; ToolResult is the stamped reply. Policy decides whether you’re allowed to submit the form; the gateway only handles submission.
-
-## Note #2:
+## Tests:
 To run the test suite, run the following commands in order
 `export PATH="$HOME/.local/bin:$PATH"`
 `uv sync --group dev`
 `uv run pytest -v`
+
+## Notes:
+* The reason for the policy folder is because LLM judgement and Speech-To-Text is not trustworthy. Since LLMs can be wrong, we assign risk tiers deterministically.
+* Schemas (schema.py and config/schemas/): We use these to validate args before an ActionIntent object is created. The orchestrator proposes tool calls but doesn't construct an intent by itself
+* Sequencing multiple tool calls lives in executor.py, not ToolGateway
+* Auditing (journal.py): records proposals, confirmations, and outcomes 
+* General Flow:
+  - The user speaks an activation word (**"murphy"**) -> identified using openWakeWord -> Murphy enters a listening state where speech is transcribed to text via STT
+  - The orchestrator (DeepSeek) proposes a tool call where build_validated_action_intent in schema.py validates against JSON schemas to construct frozen ActionIntents (sometimes a list of ActionIntents rather than just one)
+  - The execute_actions method in executor.py runs that list calling classify (gateway.py) for each intent, assigning it auto_pass, confirm_required, or deny, journaling the decision
+  - If the classification is deny, we journal it, stop the plan, cancel the tool call
+  - If the classification is confirm_required, we run ConfirmationStore.create in tool_gateway.py to add a pending verification to the dict. The TTS will ask the long prompt about the tool call / risk and the user must say the required tokens ("confirm" + "tool"). One clarification is allowed if there's a phrase mismatch.
+  - If the classification is auto_pass or a confirmed confirm_required, we run ToolGateway.call(intent) which actually calls the MCP server for that intent returning whether it was properly executed or if it failed
+  - Executor returns a PlanResult (steps, completed?, why stoped?, optional pending) and the TTS will tell the user what happened
