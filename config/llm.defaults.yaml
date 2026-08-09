@@ -1,0 +1,8 @@
+version: 1
+
+provider: deepseek
+base_url: https://api.deepseek.com/anthropic
+model: deepseek-v4-flash
+timeout_seconds: 30
+max_tool_calls: 2
+api_key: ${DEEPSEEK_API_KEY}
