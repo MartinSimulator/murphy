@@ -5,5 +5,4 @@ base_url: https://api.deepseek.com/anthropic
 model: deepseek-v4-flash
 timeout_seconds: 30
 max_tool_rounds: 2
-# Env var name only - never put the secret in this file
 api_key_env: DEEPSEEK_API_KEY

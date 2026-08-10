@@ -13,22 +13,22 @@ from murphy.mcp.tool_gateway import ToolGateway
 from murphy.orchestrator.deepseek import DeepSeekClient
 from murphy.orchestrator.router import handle_text
 
-
+# Build a ToolGateway with in-process git/docker fakes (real MCP comes later).
 def _build_fake_gateway() -> ToolGateway:
-    """ToolGateway with in-process git/docker fakes (real MCP comes later)."""
     gateway = ToolGateway()
     gateway.register_handler("git", git_handler)
     gateway.register_handler("docker", docker_handler)
     gateway.start()
     return gateway
 
-
+# Run one murphy ask request; return process exit code 0/1.
 def run_ask(args: argparse.Namespace) -> int:
-    """Run one murphy ask request; return process exit code 0/1."""
+    # Build the fake tool gateway, journal, and real LLM client
     gateway = _build_fake_gateway()
     journal = AuditJournal()
     llm = DeepSeekClient()
 
+    # Build the confirmation resolver if a confirm phrase is provided
     resolve_confirmation: ConfirmationResolver | None = None
     if args.confirm_phrase is not None:
         phrase = args.confirm_phrase

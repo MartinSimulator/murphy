@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-import httpx
+import httpx # HTTP library for making API requests
 
 from murphy.orchestrator.config import LLMConfig, get_llm_config, resolve_api_key
 from murphy.orchestrator.llm import (
@@ -22,36 +22,43 @@ _ANTHROPIC_VERSION = "2023-06-01"
 
 
 class DeepSeekClient:
-    """Production LLMClient for DeepSeek V4 Flash (Anthropic-compatible /v1/messages)."""
+    """LLMClient for DeepSeek V4 Flash (Anthropic-compatible /v1/messages)."""
 
     def __init__(
         self,
         config: LLMConfig | None = None,
         *,
-        client: httpx.Client | None = None,
+        client: httpx.Client | None = None, # if no client, create a new one
     ) -> None:
         self._config = config or get_llm_config()
-        # Caller-supplied client is useful for tests (MockTransport); otherwise own one
-        self._owns_client = client is None
+        self._owns_client = client is None # if we own the client, close it when we're done
         self._client = client or httpx.Client(timeout=self._config.timeout_seconds)
 
+    # close the client if we own it
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
 
+    # enter the context manager
     def __enter__(self) -> DeepSeekClient:
         return self
 
+    # exit the context manager
     def __exit__(self, *args: object) -> None:
         self.close()
 
+
     def complete(self, request: LLMRequest) -> LLMResponse:
+        # resolve the API key
         try:
             api_key = resolve_api_key(self._config)
         except LookupError as exc:
             raise LLMUnavailableError(str(exc)) from exc
 
+        # build the URL
         url = f"{self._config.base_url.rstrip('/')}/v1/messages"
+
+        # build the payload
         payload = _build_payload(request, model=self._config.model)
         headers = {
             "content-type": "application/json",
@@ -59,6 +66,7 @@ class DeepSeekClient:
             "anthropic-version": _ANTHROPIC_VERSION,
         }
 
+        # make the request
         try:
             response = self._client.post(url, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
@@ -66,6 +74,7 @@ class DeepSeekClient:
         except httpx.HTTPError as exc:
             raise LLMUnavailableError(f"DeepSeek request failed: {exc}") from exc
 
+        # handle the response
         if response.status_code >= 500:
             raise LLMUnavailableError(
                 f"DeepSeek server error: HTTP {response.status_code}"
@@ -75,6 +84,7 @@ class DeepSeekClient:
                 f"DeepSeek rejected request: HTTP {response.status_code}: {response.text}"
             )
 
+        # parse the response
         try:
             data = response.json()
         except ValueError as exc:
@@ -83,36 +93,41 @@ class DeepSeekClient:
         return _parse_response(data)
 
 
+# build the payload for the request
 def _build_payload(request: LLMRequest, *, model: str) -> dict[str, Any]:
     """Convert Murphy LLMRequest into an Anthropic Messages API body."""
-    messages: list[dict[str, Any]] = [dict(item) for item in request.messages]
-    messages.append({"role": "user", "content": request.user})
-    payload: dict[str, Any] = {
+    messages: list[dict[str, Any]] = [dict(item) for item in request.messages] # convert the messages to a list of dictionaries
+    messages.append({"role": "user", "content": request.user}) # add the user message
+    payload: dict[str, Any] = { 
         "model": model,
         "max_tokens": 2048,
         "system": request.system,
         "messages": messages,
     }
-    if request.tools:
+    if request.tools: # if there are tools, add them to the payload
         payload["tools"] = [dict(tool) for tool in request.tools]
-    return payload
+    return payload # return the payload
 
 
+# parse the response from the API
 def _parse_response(data: Mapping[str, Any] | Any) -> LLMResponse:
     """Convert Anthropic Messages JSON into Murphy LLMResponse."""
     if not isinstance(data, dict):
         raise LLMResponseError("DeepSeek response root must be an object")
 
+    # get the content
     content = data.get("content")
     if content is None:
         raise LLMResponseError("DeepSeek response missing content")
     if not isinstance(content, list):
         raise LLMResponseError("DeepSeek content must be a list")
 
+    # initialize the lists
     text_parts: list[str] = []
     tool_calls: list[ToolProposal] = []
     thinking_blocks: list[Any] = []
 
+    # loop through the content and parse the blocks
     for block in content:
         if not isinstance(block, dict):
             continue
@@ -141,7 +156,7 @@ def _parse_response(data: Mapping[str, Any] | Any) -> LLMResponse:
     provider_fields: dict[str, Any] = {}
     if thinking_blocks:
         provider_fields["thinking_blocks"] = thinking_blocks
-
+    # return the response
     return LLMResponse(
         tool_calls=tool_calls,
         text="\n".join(text_parts) if text_parts else None,

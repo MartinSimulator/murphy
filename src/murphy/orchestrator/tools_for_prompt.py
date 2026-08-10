@@ -13,12 +13,12 @@ from murphy.policy.schema import get_schemas
 # Avoids ambiguity if a tool name ever contains a dot.
 _TOOL_NAME_SEP = "__"
 
-
+# build the prompt-facing tool name the model should call
 def tool_name_for(server: str, tool: str) -> str:
     """Build the prompt-facing tool name the model should call."""
     return f"{server}{_TOOL_NAME_SEP}{tool}"
 
-
+# parse the tool name back into (server, tool)
 def parse_tool_name(name: str) -> tuple[str, str]:
     """Split a prompt tool name back into (server, tool)."""
     if _TOOL_NAME_SEP not in name:
@@ -28,14 +28,14 @@ def parse_tool_name(name: str) -> tuple[str, str]:
         raise ValueError(f"invalid tool name (empty server or tool): {name!r}")
     return server, tool
 
-
+# copy a checked-in JSON Schema into an Anthropic-style input_schema body
 def _input_schema_for_prompt(schema: dict[str, Any]) -> dict[str, Any]:
     """Copy a checked-in JSON Schema into an Anthropic-style input_schema body."""
     # Drop meta keys the model does not need; keep validation shape intact.
     skip = {"$schema", "$id", "title"}
     return {key: value for key, value in schema.items() if key not in skip}
 
-
+# return the enabled servers from the MCP config
 def _enabled_servers() -> set[str]:
     """Return MCP server names marked enabled in mcp.servers.yaml."""
     config = get_mcp_config()
@@ -45,7 +45,7 @@ def _enabled_servers() -> set[str]:
         if server.enabled
     }
 
-
+# return the tools for the prompt
 def tools_for_prompt(*, servers: set[str] | None = None) -> list[dict[str, Any]]:
     """
     Return Anthropic-compatible tool definitions for LLMRequest.tools.
