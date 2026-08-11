@@ -59,6 +59,7 @@ def handle_text(
     """
     # Ask the planner for ActionIntents (may raise LLM or plan-build errors)
     try:
+        # planned ActionIntents
         planned = plan(
             text,
             project_root=project_root,
