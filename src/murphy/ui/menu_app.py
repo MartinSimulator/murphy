@@ -32,7 +32,7 @@ from murphy.ui.log_viewer import LogViewerController
 # How often the status title refreshes from RuntimeController
 _STATUS_POLL_SECONDS = 0.5
 
-
+# Helper function to get the state title
 def _state_title(state: AppState) -> str:
     """Short label shown in the menu bar icon text."""
     labels = {
@@ -46,9 +46,13 @@ def _state_title(state: AppState) -> str:
     }
     return labels.get(state, "Murphy")
 
-
+# Helper function to prompt the user for text
 def _prompt_text(title: str, message: str, default: str = "") -> str | None:
     """Modal NSAlert with a text field. Returns None if the user cancels."""
+    # Accessory apps stay in the background unless we force activation;
+    # otherwise alerts often open behind other windows (looks like "nothing happens").
+    NSApp.activateIgnoringOtherApps_(True)
+
     alert = NSAlert.alloc().init()
     alert.setMessageText_(title)
     alert.setInformativeText_(message)
@@ -65,8 +69,10 @@ def _prompt_text(title: str, message: str, default: str = "") -> str | None:
     return field.stringValue().strip() or None
 
 
+# Helper function to choose the project root directory
 def _choose_directory() -> Path | None:
     """Native folder picker for project root."""
+    NSApp.activateIgnoringOtherApps_(True)
     panel = NSOpenPanel.openPanel()
     panel.setCanChooseFiles_(False)
     panel.setCanChooseDirectories_(True)
@@ -77,7 +83,7 @@ def _choose_directory() -> Path | None:
     url = panel.URLs()[0]
     return Path(url.path())
 
-
+# Class to own the status item and forward actions to RuntimeController
 class MenuBarApp(NSObject):
     """
     AppKit delegate that owns the status item and forwards actions to RuntimeController.
@@ -157,9 +163,11 @@ class MenuBarApp(NSObject):
         menu.addItem_(NSMenuItem.separatorItem())
 
         self.start_item = self._add(
-            menu, "Start Listening", "doStart:", ""
+            menu, "Push to Talk Start", "doStartPTT:", ""
         )
-        self.stop_item = self._add(menu, "Stop Listening", "doStop:", "")
+        self.stop_item = self._add(
+            menu, "Push to Talk Stop", "doStopPTT:", ""
+        )
         menu.addItem_(NSMenuItem.separatorItem())
 
         self.ask_item = self._add(menu, "Ask…", "doAsk:", "")
@@ -194,13 +202,14 @@ class MenuBarApp(NSObject):
         awaiting = state is AppState.AWAITING_CONFIRMATION
         idle = state is AppState.IDLE
         degraded = state is AppState.DEGRADED
-        armed = self.runtime.is_listening_armed()
+        listening = state is AppState.LISTENING
+        can_start_ptt = idle or awaiting
 
         self.ask_item.setEnabled_(idle)
         self.confirm_item.setEnabled_(awaiting)
         self.deny_item.setEnabled_(awaiting)
-        self.start_item.setEnabled_(not armed)
-        self.stop_item.setEnabled_(armed)
+        self.start_item.setEnabled_(can_start_ptt and not listening)
+        self.stop_item.setEnabled_(listening)
         self.clear_degraded_item.setEnabled_(degraded)
 
         root = load_project_root()
@@ -217,15 +226,21 @@ class MenuBarApp(NSObject):
 
     # --- Menu actions (UI thread only; runtime does the real work) ---
 
-    def doStart_(self, _sender) -> None:
-        self.runtime.start()
+    def doStartPTT_(self, _sender) -> None:
+        self.runtime.begin_ptt()
         self.refreshStatus_(None)
 
-    def doStop_(self, _sender) -> None:
-        self.runtime.stop()
+    def doStopPTT_(self, _sender) -> None:
+        self.runtime.end_ptt()
         self.refreshStatus_(None)
 
     def doAsk_(self, _sender) -> None:
+        if load_project_root() is None:
+            _prompt_text(
+                "Project root required",
+                "Use Set Project Root… first, then Ask again.",
+            )
+            return
         text = _prompt_text("Ask Murphy", "What should Murphy do?")
         if text is None:
             return

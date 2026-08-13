@@ -48,6 +48,8 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
       - `router.py` - Text facade: `handle_text` runs `plan` then `execute_actions` and returns `HandleResult`
       - `tools_for_prompt.py` - Build the tool list to send to the LLM for planning
     - `/voice` - Wake word, speech-to-text, and text-to-speech
+      - `capture.py` - Push-to-talk mic capture (`AudioCapture`, `FakeAudioCapture`)
+      - `stt.py` - `Transcriber` protocol; Null/Stub until MLX Whisper (D4)
     - `/ui` - macOS menu bar shell (PyObjC)
       - `menu_app.py` - `NSStatusItem` menu; posts to `RuntimeController` only
       - `log_viewer.py` - Scrollable audit log window from `fetch_recent`
