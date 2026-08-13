@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,14 +45,18 @@ class AuditJournal:
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or DEFAULT_DB_PATH # default to Application Support/Murphy/audit.db
         self.db_path.parent.mkdir(parents=True, exist_ok=True) # create the parent directory if it doesn't exist
-        self._conn = sqlite3.connect(self.db_path) # connect to the database
+        # check_same_thread=False: RuntimeController records from a worker thread
+        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row # access columns by name
-        self._conn.execute(_CREATE_TABLE_SQL) # create the table if it doesn't exist
-        self._conn.commit() # commit the transaction
+        self._lock = threading.Lock()
+        with self._lock:
+            self._conn.execute(_CREATE_TABLE_SQL) # create the table if it doesn't exist
+            self._conn.commit() # commit the transaction
 
     def close(self) -> None:
         """Close the audit journal database."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def __enter__(self) -> AuditJournal:
         """Enter the context manager."""
@@ -75,51 +80,53 @@ class AuditJournal:
             raise ValueError("policy decision digest does not match intent digest")
 
         ts = datetime.now(timezone.utc).isoformat()
-        cur = self._conn.execute(
-            """
-            INSERT INTO audit_events (
-                ts,
-                session_id,
-                intent_digest,
-                server,
-                tool,
-                args_json,
-                project_root,
-                side_effect,
-                policy_tier,
-                policy_reason,
-                policy_message,
-                outcome
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                INSERT INTO audit_events (
+                    ts,
+                    session_id,
+                    intent_digest,
+                    server,
+                    tool,
+                    args_json,
+                    project_root,
+                    side_effect,
+                    policy_tier,
+                    policy_reason,
+                    policy_message,
+                    outcome
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ( # bind values to the parameters
+                    ts,
+                    session_id,
+                    intent.digest,
+                    intent.server,
+                    intent.tool,
+                    json.dumps(dict(intent.args), sort_keys=True),
+                    str(intent.project_root),
+                    intent.side_effect.value,
+                    decision.tier.value,
+                    decision.reason_code.value,
+                    decision.message,
+                    outcome,
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ( # bind values to the parameters
-                ts,
-                session_id,
-                intent.digest,
-                intent.server,
-                intent.tool,
-                json.dumps(dict(intent.args), sort_keys=True),
-                str(intent.project_root),
-                intent.side_effect.value,
-                decision.tier.value,
-                decision.reason_code.value,
-                decision.message,
-                outcome,
-            ),
-        )
-        self._conn.commit() # commit the transaction
-        return int(cur.lastrowid) # return the new row id
+            self._conn.commit() # commit the transaction
+            return int(cur.lastrowid) # return the new row id
 
     # Return all rows for a given intent digest (newest last).
     def fetch_by_digest(self, intent_digest: str) -> list[sqlite3.Row]:
         """Return all rows for a given intent digest (newest last)."""
-        cur = self._conn.execute(
-            """
-            SELECT * FROM audit_events
-            WHERE intent_digest = ?
-            ORDER BY id ASC
-            """,
-            (intent_digest,),
-        )
-        return list(cur.fetchall()) # return all the rows
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                SELECT * FROM audit_events
+                WHERE intent_digest = ?
+                ORDER BY id ASC
+                """,
+                (intent_digest,),
+            )
+            return list(cur.fetchall()) # return all the rows
