@@ -41,30 +41,22 @@ class RuntimeController:
         confirmations: ConfirmationStore | None = None,
         state_machine: AppStateMachine | None = None,
     ) -> None:
-        self._llm = llm
-        self._owns_gateway = gateway is None
+        self._llm = llm 
+        self._owns_gateway = gateway is None # bool to indicate if we own the gateway
         self._gateway = gateway if gateway is not None else _build_fake_gateway()
-        self._owns_journal = journal is None
+        self._owns_journal = journal is None # bool to indicate if we own the journal
         self._journal = journal if journal is not None else AuditJournal()
-        self._confirmations = (
-            confirmations if confirmations is not None else ConfirmationStore()
-        )
-        self._machine = (
-            state_machine if state_machine is not None else AppStateMachine()
-        )
+        self._confirmations = (confirmations if confirmations is not None else ConfirmationStore())
+        self._machine = (state_machine if state_machine is not None else AppStateMachine())
 
-        # Listening readiness (PTT armed); wake-word comes later
-        self._listening_armed = False
-        # Human-readable status for the menu (especially when degraded)
-        self._status_message = "Ready."
-        # Worker that runs handle_text; None when idle
-        self._worker: threading.Thread | None = None
-        # Confirmation hand-off between worker (resolver) and UI thread
-        self._confirm_event = threading.Event()
-        self._confirm_phrase: str | None = None
-        self._pending: PendingConfirmation | None = None
-        # Serialize state / status / confirm fields across threads
-        self._lock = threading.Lock()
+        # Non injected fields:
+        self._listening_armed = False # start/stop flag for future PTT
+        self._status_message = "Ready." # human-readable status for the menu (especially when degraded)
+        self._worker: threading.Thread | None = None # worker that runs handle_text; None when idle
+        self._confirm_event = threading.Event() # event to signal the confirmation resolver
+        self._confirm_phrase: str | None = None # phrase to confirm the action
+        self._pending: PendingConfirmation | None = None # pending confirmation
+        self._lock = threading.Lock() # using with self._lock ensures thread safety
 
     def start(self) -> None:
         """Arm listening so push-to-talk may begin (wake-word later)."""
@@ -95,6 +87,11 @@ class RuntimeController:
 
     def get_state(self) -> AppState:
         return self._machine.get_state()
+
+    @property
+    def journal(self) -> AuditJournal:
+        """Audit journal used by the menu log viewer."""
+        return self._journal
 
     def status_message(self) -> str:
         with self._lock:
@@ -128,7 +125,7 @@ class RuntimeController:
         root is unset.
         """
         cleaned = text.strip()
-        if not cleaned:
+        if not cleaned: 
             with self._lock:
                 self._status_message = "Empty request ignored."
             return
@@ -161,9 +158,9 @@ class RuntimeController:
             self._pending = None
             # Assign under the lock so a second submit_text cannot race in
             worker = threading.Thread(
-                target=self._run_handle_text,
-                args=(cleaned, project_root),
-                name="murphy-handle-text",
+                target=self._run_handle_text, # tell the worker to call handle_text
+                args=(cleaned, project_root), # pass the cleaned text and project root
+                name="murphy-handle-text", # name the thread
                 daemon=True,
             )
             self._worker = worker

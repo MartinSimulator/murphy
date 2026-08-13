@@ -130,3 +130,18 @@ class AuditJournal:
                 (intent_digest,),
             )
             return list(cur.fetchall()) # return all the rows
+
+    def fetch_recent(self, limit: int = 100) -> list[sqlite3.Row]:
+        """Return the newest audit rows (newest first), capped by limit."""
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        with self._lock:
+            cur = self._conn.execute(
+                """
+                SELECT * FROM audit_events
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return list(cur.fetchall())

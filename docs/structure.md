@@ -20,7 +20,11 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
     - `__init__.py` - Package version and public identity
     - `cli.py` - `murphy` CLI entry point with murphy ask and subparsers for args
     - `paths.py` - Runtime user-data location (`~/Library/Application Support/Murphy/`)
-    - `/app` - Runtime state machine (`idle`, `listening`, `executing`, ...)
+    - `/app` - Runtime state machine and coordinator (`idle`, `listening`, `executing`, ...)
+      - `state.py` - `AppState`, handlers protocol, `AppStateMachine`
+      - `state_handlers/` - Allowed transitions per state
+      - `settings.py` - Load/save `project_root` under Application Support
+      - `runtime.py` - `RuntimeController`: worker-thread `handle_text`, confirmation Event
     - `/policy` - Deterministic auto-pass / confirm / deny gate
       - `intent.py` - ActionIntent model and canonical digest (content fingerprint) for action identity
       - `schema.py` - Validate tool arguments against checked-in JSON Schemas before an ActionIntent is built
@@ -44,7 +48,10 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
       - `router.py` - Text facade: `handle_text` runs `plan` then `execute_actions` and returns `HandleResult`
       - `tools_for_prompt.py` - Build the tool list to send to the LLM for planning
     - `/voice` - Wake word, speech-to-text, and text-to-speech
-    - `/ui` - macOS menu bar shell
+    - `/ui` - macOS menu bar shell (PyObjC)
+      - `menu_app.py` - `NSStatusItem` menu; posts to `RuntimeController` only
+      - `log_viewer.py` - Scrollable audit log window from `fetch_recent`
+      - `run_menu.py` - Entry used by `murphy menu`
 - `/tests`
   - `test_scaffold.py` - Smoke tests that the package, CLI, paths, and config files exist
   - `test_policy_decisions.py` - Decision-table tests for policy tiers, schema rejection, and audit journal
@@ -58,6 +65,9 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
   - `test_router.py` - `handle_text` facade wiring
   - `test_cli_ask.py` - `murphy ask` CLI wiring
   - `test_text_e2e.py` - Text E2E LLM paths (auto-pass, confirm, deny, schema fail, unavailable)
+  - `test_app_state.py` - AppStateMachine transitions and handlers
+  - `test_runtime.py` - RuntimeController worker thread and confirmation
+  - `test_menu.py` - Menu helpers, fetch_recent, macOS import smoke
   - `test_tool_gateway.py` - ToolGateway lifecycle and fake handlers
   - `test_confirmation.py` - Digest-bound confirmation phrases
   - `test_executor.py` - Sequential execution and policy gating

@@ -10,6 +10,7 @@ from pathlib import Path
 from murphy import __version__
 from murphy.execution.run_ask import run_ask
 
+
 # argv is the list of arguments passed to the script (None indicates we don't have to pass any arguments)
 # return value is an integer indicating success (0) or failure (non-zero)
 def main(argv: list[str] | None = None) -> int:
@@ -32,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     ask_parser.add_argument("--project-root", type=Path, required=True, help="Project directory for tool calls")
     ask_parser.add_argument("--confirm-phrase", default=None, help="Phrase to approve confirm_required actions")
 
+    subparsers.add_parser("menu", help="Open the macOS menu bar app")
+
     # Parse the arguments and store them in args
     args = parser.parse_args(argv)
 
@@ -41,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "ask":
         return run_ask(args)
+
+    if args.command == "menu":
+        from murphy.ui.run_menu import run_menu
+
+        return run_menu()
 
     parser.print_help()
     return 0
