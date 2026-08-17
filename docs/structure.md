@@ -105,3 +105,11 @@ To run the test suite, run the following commands in order
     One clarification is allowed if there's a phrase mismatch.
   - If the classification is auto_pass or a confirmed confirm_required, we run `ToolGateway.call(intent)` which actually calls the MCP server for that intent returning whether it was properly executed or if it failed
   - Executor returns a PlanResult (steps, completed?, why stopped?, optional pending) and the TTS will tell the user what happened
+
+## How is Input Handled
+1. begin_ptt (in runtime controller) opens the mic with AudioCapture.start and moves state to LISTENING
+2. end_ptt stops the capture, moves the state to TRANSCRIBING, and starts murphy-ptt-finish which calls AudioCapture.stop() which concatenates chunks into a float32 array
+3. a different thread (murphy-ptt-finish) transcribes those samples using mlx-whisper (injected)
+4. if it was a new ask, it goes back to IDLE and calls submit_text(text) which is when the handle-text worker starts
+5. if PTT was for a pending_confirmation, it calls submit_confirmation_phrase(text) instead and doesn't go through handle_text again
+Mental Model for Typical Scenarios: mic -> numpy arr -> STT -> text -> submit_text -> worker -> handle_text -> plan -> execute
