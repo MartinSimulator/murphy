@@ -136,14 +136,51 @@ def test_complete_http_400_is_response_error(
     monkeypatch.setenv("TEST_DEEPSEEK_KEY", "test-key")
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, text="bad request")
+        return httpx.Response(
+            400,
+            text=json.dumps(
+                {
+                    "error": {
+                        "message": "tool_use ids were found without tool_result",
+                        "type": "invalid_request_error",
+                    }
+                }
+            ),
+        )
 
     client = DeepSeekClient(
         config=_config(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
 
-    with pytest.raises(LLMResponseError, match="rejected request"):
+    with pytest.raises(LLMResponseError, match="invalid_request_error: tool_use"):
+        client.complete(_request())
+
+
+def test_complete_invalid_api_key_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "test-key")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            text=json.dumps(
+                {
+                    "error": {
+                        "message": "Your api key: **** is invalid",
+                        "type": "invalid_request_error",
+                    }
+                }
+            ),
+        )
+
+    client = DeepSeekClient(
+        config=_config(),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LLMUnavailableError, match="API key rejected"):
         client.complete(_request())
 
 

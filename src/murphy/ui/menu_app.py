@@ -130,6 +130,8 @@ class MenuBarApp(NSObject):
         self.log_viewer = LogViewerController.alloc().initWithJournal_(
             self.runtime.journal
         )
+        # Warm MLX Whisper off the UI thread (RuntimeController.start)
+        self.runtime.start()
         # Poll status so the title tracks worker-thread state changes
         self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             _STATUS_POLL_SECONDS,

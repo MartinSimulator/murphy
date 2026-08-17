@@ -13,6 +13,7 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
   - `policy.defaults.yaml` - Default risk tiers, deny roots, and protected branches for the policy gateway
   - `side_effects.yaml` - Default impact class per `server.tool` (`read-only` / `additive` / `mutative` / `destructive`)
   - `llm.defaults.yaml` - DeepSeek V4 Flash URL, model name, timeout, and API key reference
+  - `voice.defaults.yaml` - Local STT (MLX Whisper) and TTS placeholders
   - `mcp.servers.yaml` - Which MCP integrations exist and how they are launched (stdio)
   - `/schemas` - JSON Schemas for each narrow tool (`git.push.json`, `docker.prune.json`, ...)
 - `/src`
@@ -49,7 +50,8 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
       - `tools_for_prompt.py` - Build the tool list to send to the LLM for planning
     - `/voice` - Wake word, speech-to-text, and text-to-speech
       - `capture.py` - Push-to-talk mic capture (`AudioCapture`, `FakeAudioCapture`)
-      - `stt.py` - `Transcriber` protocol; Null/Stub until MLX Whisper (D4)
+      - `stt.py` - `Transcriber` protocol; `MlxWhisperTranscriber` (MLX Whisper)
+      - `config.py` - Load STT/TTS defaults from `config/voice.defaults.yaml`
     - `/ui` - macOS menu bar shell (PyObjC)
       - `menu_app.py` - `NSStatusItem` menu; posts to `RuntimeController` only
       - `log_viewer.py` - Scrollable audit log window from `fetch_recent`

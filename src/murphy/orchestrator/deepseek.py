@@ -21,6 +21,26 @@ from murphy.orchestrator.tools_for_prompt import parse_tool_name
 _ANTHROPIC_VERSION = "2023-06-01"
 
 
+def _format_api_error(body: str) -> str:
+    """Pull a short human message out of a DeepSeek/Anthropic error JSON body."""
+    try:
+        import json
+
+        data = json.loads(body)
+    except ValueError:
+        return body[:300]
+
+    err = data.get("error") if isinstance(data, dict) else None
+    if isinstance(err, dict):
+        msg = err.get("message")
+        err_type = err.get("type") or err.get("code")
+        if isinstance(msg, str) and msg:
+            if isinstance(err_type, str) and err_type:
+                return f"{err_type}: {msg}"
+            return msg
+    return body[:300]
+
+
 class DeepSeekClient:
     """LLMClient for DeepSeek V4 Flash (Anthropic-compatible /v1/messages)."""
 
@@ -80,8 +100,21 @@ class DeepSeekClient:
                 f"DeepSeek server error: HTTP {response.status_code}"
             )
         if response.status_code >= 400:
+            detail = _format_api_error(response.text)
+            # Auth failures are configuration problems, not bad model output
+            lowered = detail.lower()
+            if (
+                response.status_code in {401, 403}
+                or "api key" in lowered
+                or "unauthorized" in lowered
+                or "authentication" in lowered
+            ):
+                raise LLMUnavailableError(
+                    f"DeepSeek API key rejected ({detail}). "
+                    "Check DEEPSEEK_API_KEY in your shell or repo .env, then relaunch."
+                ) from None
             raise LLMResponseError(
-                f"DeepSeek rejected request: HTTP {response.status_code}: {response.text}"
+                f"DeepSeek rejected request: HTTP {response.status_code}: {detail}"
             )
 
         # parse the response

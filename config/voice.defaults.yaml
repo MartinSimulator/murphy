@@ -1,0 +1,11 @@
+version: 1
+
+stt:
+  provider: mlx_whisper
+  model: mlx-community/whisper-small-mlx
+  language: en
+  sample_rate: 16000
+
+tts:
+  # Placeholder for Kokoro (Deliverable 5)
+  voice: af_heart

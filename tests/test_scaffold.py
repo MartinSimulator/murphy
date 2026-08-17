@@ -28,3 +28,4 @@ def test_config_defaults_exist() -> None:
     root = Path(__file__).resolve().parents[1]
     assert (root / "config" / "policy.defaults.yaml").is_file()
     assert (root / "config" / "mcp.servers.yaml").is_file()
+    assert (root / "config" / "voice.defaults.yaml").is_file()

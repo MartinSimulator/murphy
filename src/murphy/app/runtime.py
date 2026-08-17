@@ -16,7 +16,7 @@ from murphy.mcp.tool_gateway import ToolGateway
 from murphy.orchestrator.llm import LLMClient
 from murphy.orchestrator.router import HandleResult, handle_text
 from murphy.voice.capture import AudioCapture, AudioCaptureProtocol, CaptureResult
-from murphy.voice.stt import NullTranscriber, Transcriber
+from murphy.voice.stt import Transcriber, default_transcriber
 
 # Match ConfirmationStore's default TTL so a silent UI does not hang forever
 _CONFIRM_WAIT_SECONDS = 60.0
@@ -45,10 +45,10 @@ class RuntimeController:
         capture: AudioCaptureProtocol | None = None,
         transcriber: Transcriber | None = None,
     ) -> None:
-        self._llm = llm
-        self._owns_gateway = gateway is None
+        self._llm = llm 
+        self._owns_gateway = gateway is None # bool to indicate if we own the gateway
         self._gateway = gateway if gateway is not None else _build_fake_gateway()
-        self._owns_journal = journal is None
+        self._owns_journal = journal is None # bool to indicate if we own the journal
         self._journal = journal if journal is not None else AuditJournal()
         self._confirmations = (
             confirmations if confirmations is not None else ConfirmationStore()
@@ -60,10 +60,11 @@ class RuntimeController:
         self._capture: AudioCaptureProtocol = (
             capture if capture is not None else AudioCapture()
         )
-        # Null until Deliverable 4 (MLX Whisper)
+        # Production default is MLX Whisper; tests inject StubTranscriber
         self._transcriber: Transcriber = (
-            transcriber if transcriber is not None else NullTranscriber()
+            transcriber if transcriber is not None else default_transcriber()
         )
+        self._stt_ready = False
 
         self._listening_armed = False
         self._status_message = "Ready."
@@ -73,16 +74,50 @@ class RuntimeController:
         self._confirm_phrase: str | None = None
         self._pending: PendingConfirmation | None = None
         self._ptt_from_confirmation = False
+        self._last_heard: str | None = None
         self._lock = threading.Lock()
 
     def start(self) -> None:
-        """Arm listening so push-to-talk may begin (wake-word later)."""
+        """Arm listening and warm the STT model so the first PTT is fast."""
         with self._lock:
             self._listening_armed = True
             if self._machine.get_state() is AppState.DEGRADED:
                 self._status_message = "Listening armed, but still degraded."
-            else:
+                return
+            self._status_message = "Warming speech-to-text…"
+
+        warm = getattr(self._transcriber, "warmup", None)
+        if not callable(warm):
+            with self._lock:
+                self._stt_ready = True
                 self._status_message = "Listening armed. Use Push to Talk to speak."
+            return
+
+        def _warm_worker() -> None:
+            try:
+                warm()
+                with self._lock:
+                    self._stt_ready = True
+                    if self._machine.get_state() is AppState.DEGRADED:
+                        self._status_message = (
+                            "Listening armed, but still degraded."
+                        )
+                    else:
+                        self._status_message = (
+                            "Listening armed. STT ready. Use Push to Talk."
+                        )
+            except Exception as exc:  # noqa: BLE001
+                with self._lock:
+                    self._stt_ready = False
+                    if self._machine.get_state() is not AppState.DEGRADED:
+                        self._machine.transition_to(AppState.DEGRADED)
+                    self._status_message = f"STT failed to load: {exc}"
+
+        threading.Thread(
+            target=_warm_worker,
+            name="murphy-stt-warm",
+            daemon=True,
+        ).start()
 
     def stop(self) -> None:
         """Disarm listening; cancel PTT and deny any confirmation wait."""
@@ -140,11 +175,15 @@ class RuntimeController:
             self._status_message = f"Project root set to {project_root}."
 
     def clear_degraded(self) -> None:
-        """Return from degraded to idle after the operator recovers."""
+        """Return from degraded to idle and retry STT warmup if needed."""
         with self._lock:
-            if self._machine.get_state() is AppState.DEGRADED:
-                self._machine.transition_to(AppState.IDLE)
-                self._status_message = "Ready."
+            if self._machine.get_state() is not AppState.DEGRADED:
+                return
+            self._machine.transition_to(AppState.IDLE)
+            self._status_message = "Ready."
+        # Retry model load after a previous STT failure
+        if not self._stt_ready and callable(getattr(self._transcriber, "warmup", None)):
+            self.start()
 
     def begin_ptt(self) -> None:
         """
@@ -208,7 +247,7 @@ class RuntimeController:
         root is unset.
         """
         cleaned = text.strip()
-        if not cleaned:
+        if not cleaned: 
             with self._lock:
                 self._status_message = "Empty request ignored."
             return
@@ -239,10 +278,11 @@ class RuntimeController:
             self._confirm_event.clear()
             self._confirm_phrase = None
             self._pending = None
+            # Assign under the lock so a second submit_text cannot race in
             worker = threading.Thread(
-                target=self._run_handle_text,
-                args=(cleaned, project_root),
-                name="murphy-handle-text",
+                target=self._run_handle_text, # tell the worker to call handle_text
+                args=(cleaned, project_root), # pass the cleaned text and project root
+                name="murphy-handle-text", # name the thread
                 daemon=True,
             )
             self._worker = worker
@@ -296,13 +336,15 @@ class RuntimeController:
             with self._lock:
                 if self._machine.get_state() is AppState.TRANSCRIBING:
                     self._machine.transition_to(AppState.AWAITING_CONFIRMATION)
+                self._last_heard = text
             self.submit_confirmation_phrase(text)
             return
 
         with self._lock:
             if self._machine.get_state() is AppState.TRANSCRIBING:
                 self._machine.transition_to(AppState.IDLE)
-                self._status_message = f"Heard: {text}"
+            self._last_heard = text
+            self._status_message = f"Heard: {text}"
         self.submit_text(text)
 
     def _handle_empty_ptt(
@@ -390,10 +432,17 @@ class RuntimeController:
                 self._status_message = result.message
                 return
 
+            # Soft failures and success both return to idle for another ask
             if state is AppState.DEGRADED:
                 self._status_message = result.message
                 return
             if state is not AppState.IDLE:
                 self._machine.transition_to(AppState.IDLE)
-            self._status_message = result.message
+
+            message = result.message
+            if result.error and result.assistant_text:
+                message = f"{result.message} {result.assistant_text}"
+            if self._last_heard and result.error:
+                message = f"Heard: {self._last_heard} · {message}"
+            self._status_message = message
             self._pending = None

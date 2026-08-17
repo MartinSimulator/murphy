@@ -8,12 +8,15 @@ import argparse
 from pathlib import Path
 # Import the version from the package to display in the help message
 from murphy import __version__
+from murphy.env import load_dotenv
 from murphy.execution.run_ask import run_ask
 
 
 # argv is the list of arguments passed to the script (None indicates we don't have to pass any arguments)
 # return value is an integer indicating success (0) or failure (non-zero)
 def main(argv: list[str] | None = None) -> int:
+    # Load repo .env so DEEPSEEK_API_KEY works without a manual export
+    load_dotenv()
     # Create an argument parser for the script
     parser = argparse.ArgumentParser(
         prog="murphy",
