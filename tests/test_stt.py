@@ -28,7 +28,10 @@ def test_load_voice_defaults_from_repo() -> None:
     assert cfg.stt.model == "mlx-community/whisper-small-mlx"
     assert cfg.stt.language == "en"
     assert cfg.stt.sample_rate == 16000
+    assert cfg.tts.provider == "kokoro"
     assert cfg.tts.voice == "af_heart"
+    assert cfg.tts.speed == 1.0
+    assert cfg.tts.lang == "en-us"
 
 
 def test_get_voice_config_caches(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,7 +100,10 @@ def test_mlx_from_voice_config(tmp_path: Path) -> None:
         "  language: en\n"
         "  sample_rate: 16000\n"
         "tts:\n"
-        "  voice: af_heart\n",
+        "  provider: kokoro\n"
+        "  voice: af_heart\n"
+        "  speed: 1.0\n"
+        "  lang: en-us\n",
         encoding="utf-8",
     )
     cfg = load_voice_config(path)

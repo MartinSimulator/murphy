@@ -9,11 +9,12 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
 - `/docs`
   - `design-doc.md` - High-level project overview: goals, security model, and example scenarios
   - `structure.md` - Map of the repository layout and what each part is for
+  - `development-notes.md` - Local run notes: .env, Whisper/Kokoro model paths, latency spot-checks
 - `/config` - Checked-in safe defaults (user secrets and mutable state live under Application Support)
   - `policy.defaults.yaml` - Default risk tiers, deny roots, and protected branches for the policy gateway
   - `side_effects.yaml` - Default impact class per `server.tool` (`read-only` / `additive` / `mutative` / `destructive`)
   - `llm.defaults.yaml` - DeepSeek V4 Flash URL, model name, timeout, and API key reference
-  - `voice.defaults.yaml` - Local STT (MLX Whisper) and TTS placeholders
+  - `voice.defaults.yaml` - Local STT (MLX Whisper) and TTS (Kokoro) defaults
   - `mcp.servers.yaml` - Which MCP integrations exist and how they are launched (stdio)
   - `/schemas` - JSON Schemas for each narrow tool (`git.push.json`, `docker.prune.json`, ...)
 - `/src`
@@ -25,7 +26,7 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
       - `state.py` - `AppState`, handlers protocol, `AppStateMachine`
       - `state_handlers/` - Allowed transitions per state
       - `settings.py` - Load/save `project_root` under Application Support
-      - `runtime.py` - `RuntimeController`: worker-thread `handle_text`, confirmation Event
+      - `runtime.py` - `RuntimeController`: worker-thread `handle_text`, confirmation Event, STT/TTS
     - `/policy` - Deterministic auto-pass / confirm / deny gate
       - `intent.py` - ActionIntent model and canonical digest (content fingerprint) for action identity
       - `schema.py` - Validate tool arguments against checked-in JSON Schemas before an ActionIntent is built
@@ -51,6 +52,7 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
     - `/voice` - Wake word, speech-to-text, and text-to-speech
       - `capture.py` - Push-to-talk mic capture (`AudioCapture`, `FakeAudioCapture`)
       - `stt.py` - `Transcriber` protocol; `MlxWhisperTranscriber` (MLX Whisper)
+      - `speech.py` - `SpeechOutput` protocol; `KokoroSpeechOutput` (kokoro-onnx)
       - `config.py` - Load STT/TTS defaults from `config/voice.defaults.yaml`
     - `/ui` - macOS menu bar shell (PyObjC)
       - `menu_app.py` - `NSStatusItem` menu; posts to `RuntimeController` only
@@ -70,11 +72,14 @@ Policy decides whether you’re allowed to submit the form; the gateway only han
   - `test_cli_ask.py` - `murphy ask` CLI wiring
   - `test_text_e2e.py` - Text E2E LLM paths (auto-pass, confirm, deny, schema fail, unavailable)
   - `test_app_state.py` - AppStateMachine transitions and handlers
-  - `test_runtime.py` - RuntimeController worker thread and confirmation
+  - `test_runtime.py` - RuntimeController worker thread, confirmation, and TTS speak
   - `test_menu.py` - Menu helpers, fetch_recent, macOS import smoke
   - `test_tool_gateway.py` - ToolGateway lifecycle and fake handlers
   - `test_confirmation.py` - Digest-bound confirmation phrases
   - `test_executor.py` - Sequential execution and policy gating
+  - `test_stt.py` - Voice config and MLX Whisper (mocked)
+  - `test_speech.py` - Kokoro SpeechOutput helpers (mocked)
+  - `test_capture.py` - Fake capture and PTT → submit_text / confirmation
 
 ## Tests:
 To run the test suite, run the following commands in order

@@ -17,6 +17,7 @@ from murphy.mcp.fake_handlers.git import git_handler
 from murphy.mcp.tool_gateway import ToolGateway
 from murphy.orchestrator.fake_llm import FakeLLM
 from murphy.orchestrator.llm import LLMResponse, ToolProposal
+from murphy.voice.speech import NullSpeechOutput, RecordingSpeechOutput
 
 
 @pytest.fixture
@@ -77,7 +78,9 @@ def test_submit_text_runs_handle_text_off_calling_thread(
             ]
         )
     )
-    runtime = RuntimeController(llm=llm, gateway=_gateway(), journal=journal)
+    runtime = RuntimeController(
+        llm=llm, gateway=_gateway(), journal=journal, speech=NullSpeechOutput()
+    )
     try:
         runtime.submit_text("spin up postgres")
         _wait_until(lambda: runtime.get_state() is AppState.IDLE)
@@ -102,7 +105,9 @@ def test_confirmation_phrase_unblocks_and_executes(
             ]
         )
     )
-    runtime = RuntimeController(llm=llm, gateway=_gateway(), journal=journal)
+    runtime = RuntimeController(
+        llm=llm, gateway=_gateway(), journal=journal, speech=NullSpeechOutput()
+    )
     try:
         runtime.submit_text("push to main")
         _wait_until(
@@ -124,6 +129,7 @@ def test_llm_unavailable_goes_degraded(
         llm=FakeLLM(unavailable=True),
         gateway=_gateway(),
         journal=journal,
+        speech=NullSpeechOutput(),
     )
     try:
         runtime.submit_text("do something")
@@ -146,10 +152,70 @@ def test_submit_text_without_project_root_stays_idle(
         llm=FakeLLM(default=LLMResponse(text="hi")),
         gateway=_gateway(),
         journal=journal,
+        speech=NullSpeechOutput(),
     )
     try:
         runtime.submit_text("hello")
         assert runtime.get_state() is AppState.IDLE
         assert "project root" in runtime.status_message().lower()
+    finally:
+        runtime.close()
+
+
+def test_speaks_confirmation_prompt_and_result(
+    project_root: Path, journal: AuditJournal
+) -> None:
+    llm = FakeLLM(
+        default=LLMResponse(
+            tool_calls=[
+                ToolProposal(
+                    server="git",
+                    tool="push",
+                    args={"remote": "origin", "branch": "main", "force": False},
+                )
+            ]
+        )
+    )
+    speech = RecordingSpeechOutput()
+    runtime = RuntimeController(
+        llm=llm, gateway=_gateway(), journal=journal, speech=speech
+    )
+    try:
+        runtime.submit_text("push to main")
+        _wait_until(
+            lambda: any("Confirmation required" in s for s in speech.spoken)
+        )
+        assert runtime.get_state() is AppState.AWAITING_CONFIRMATION
+        pending = runtime.pending_confirmation()
+        assert pending is not None
+        runtime.submit_confirmation_phrase(" ".join(pending.required_tokens))
+        _wait_until(lambda: runtime.get_state() is AppState.IDLE)
+        assert any("Plan completed" in s for s in speech.spoken)
+    finally:
+        runtime.close()
+
+
+def test_speaks_final_message_on_auto_pass(
+    project_root: Path, journal: AuditJournal
+) -> None:
+    llm = FakeLLM(
+        default=LLMResponse(
+            tool_calls=[
+                ToolProposal(
+                    server="docker",
+                    tool="compose_up",
+                    args={"services": ["postgres"]},
+                )
+            ]
+        )
+    )
+    speech = RecordingSpeechOutput()
+    runtime = RuntimeController(
+        llm=llm, gateway=_gateway(), journal=journal, speech=speech
+    )
+    try:
+        runtime.submit_text("spin up postgres")
+        _wait_until(lambda: runtime.get_state() is AppState.IDLE)
+        assert speech.spoken == ["Plan completed."]
     finally:
         runtime.close()

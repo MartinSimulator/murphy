@@ -20,8 +20,12 @@ class STTConfig(BaseModel):
 class TTSConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    # Placeholder for Kokoro (Deliverable 5)
+    provider: str = "kokoro"
     voice: str = "af_heart"
+    speed: float = Field(default=1.0, gt=0.0)
+    lang: str = "en-us"
+    # Optional override for the Application Support models/kokoro directory
+    model_dir: str | None = None
 
 
 class VoiceConfig(BaseModel):

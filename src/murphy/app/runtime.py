@@ -16,6 +16,7 @@ from murphy.mcp.tool_gateway import ToolGateway
 from murphy.orchestrator.llm import LLMClient
 from murphy.orchestrator.router import HandleResult, handle_text
 from murphy.voice.capture import AudioCapture, AudioCaptureProtocol, CaptureResult
+from murphy.voice.speech import SpeechOutput, default_speech_output
 from murphy.voice.stt import Transcriber, default_transcriber
 
 # Match ConfirmationStore's default TTL so a silent UI does not hang forever
@@ -44,6 +45,7 @@ class RuntimeController:
         state_machine: AppStateMachine | None = None,
         capture: AudioCaptureProtocol | None = None,
         transcriber: Transcriber | None = None,
+        speech: SpeechOutput | None = None,
     ) -> None:
         self._llm = llm 
         self._owns_gateway = gateway is None # bool to indicate if we own the gateway
@@ -64,7 +66,12 @@ class RuntimeController:
         self._transcriber: Transcriber = (
             transcriber if transcriber is not None else default_transcriber()
         )
+        # Production default is Kokoro; tests inject Null/RecordingSpeechOutput
+        self._speech: SpeechOutput = (
+            speech if speech is not None else default_speech_output()
+        )
         self._stt_ready = False
+        self._tts_ready = False
 
         self._listening_armed = False
         self._status_message = "Ready."
@@ -78,46 +85,77 @@ class RuntimeController:
         self._lock = threading.Lock()
 
     def start(self) -> None:
-        """Arm listening and warm the STT model so the first PTT is fast."""
+        """Arm listening and warm STT/TTS so the first PTT or speak is fast."""
         with self._lock:
             self._listening_armed = True
             if self._machine.get_state() is AppState.DEGRADED:
                 self._status_message = "Listening armed, but still degraded."
                 return
-            self._status_message = "Warming speech-to-text…"
+            self._status_message = "Warming speech models…"
 
-        warm = getattr(self._transcriber, "warmup", None)
-        if not callable(warm):
-            with self._lock:
-                self._stt_ready = True
-                self._status_message = "Listening armed. Use Push to Talk to speak."
-            return
+        threading.Thread(
+            target=self._warm_voice_models,
+            name="murphy-voice-warm",
+            daemon=True,
+        ).start()
 
-        def _warm_worker() -> None:
+    def _warm_voice_models(self) -> None:
+        """Load STT (hard fail → degraded) then TTS (soft fail → status note)."""
+        warm_stt = getattr(self._transcriber, "warmup", None)
+        if callable(warm_stt):
             try:
-                warm()
-                with self._lock:
-                    self._stt_ready = True
-                    if self._machine.get_state() is AppState.DEGRADED:
-                        self._status_message = (
-                            "Listening armed, but still degraded."
-                        )
-                    else:
-                        self._status_message = (
-                            "Listening armed. STT ready. Use Push to Talk."
-                        )
+                warm_stt()
             except Exception as exc:  # noqa: BLE001
                 with self._lock:
                     self._stt_ready = False
                     if self._machine.get_state() is not AppState.DEGRADED:
                         self._machine.transition_to(AppState.DEGRADED)
                     self._status_message = f"STT failed to load: {exc}"
+                return
+        with self._lock:
+            self._stt_ready = True
 
-        threading.Thread(
-            target=_warm_worker,
-            name="murphy-stt-warm",
-            daemon=True,
-        ).start()
+        tts_note: str | None = None
+        warm_tts = getattr(self._speech, "warmup", None)
+        if callable(warm_tts):
+            try:
+                warm_tts()
+                with self._lock:
+                    self._tts_ready = True
+            except Exception as exc:  # noqa: BLE001
+                tts_note = f"TTS unavailable: {exc}"
+                with self._lock:
+                    self._tts_ready = False
+        else:
+            with self._lock:
+                self._tts_ready = True
+
+        with self._lock:
+            if self._machine.get_state() is AppState.DEGRADED:
+                self._status_message = "Listening armed, but still degraded."
+            elif tts_note is not None:
+                self._status_message = (
+                    f"Listening armed. STT ready. {tts_note}"
+                )
+            else:
+                self._status_message = (
+                    "Listening armed. STT ready. Use Push to Talk."
+                )
+
+    def _speak(self, text: str) -> None:
+        """Speak a user-facing string; never raise into the request path."""
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        try:
+            self._speech.speak(cleaned)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                # Keep the primary status; append a short TTS note if useful
+                if "TTS" not in self._status_message:
+                    self._status_message = (
+                        f"{self._status_message} (TTS error: {exc})"
+                    )
 
     def stop(self) -> None:
         """Disarm listening; cancel PTT and deny any confirmation wait."""
@@ -175,7 +213,7 @@ class RuntimeController:
             self._status_message = f"Project root set to {project_root}."
 
     def clear_degraded(self) -> None:
-        """Return from degraded to idle and retry STT warmup if needed."""
+        """Return from degraded to idle and retry voice model warmup if needed."""
         with self._lock:
             if self._machine.get_state() is not AppState.DEGRADED:
                 return
@@ -375,6 +413,10 @@ class RuntimeController:
         returns a phrase or None. On a non-None phrase, moves to executing
         before the executor dispatches the tool.
         """
+        prompt = (
+            f"Confirmation required: say something like "
+            f"'{pending.expected_phrase}'."
+        )
         with self._lock:
             state = self._machine.get_state()
             if state is AppState.PLANNING:
@@ -384,10 +426,10 @@ class RuntimeController:
             self._pending = pending
             self._confirm_phrase = None
             self._confirm_event.clear()
-            self._status_message = (
-                f"Confirmation required: say something like "
-                f"'{pending.expected_phrase}'."
-            )
+            self._status_message = prompt
+
+        # Speak outside the lock so UI polls are not blocked on TTS
+        self._speak(prompt)
 
         signaled = self._confirm_event.wait(timeout=_CONFIRM_WAIT_SECONDS)
         with self._lock:
@@ -412,10 +454,12 @@ class RuntimeController:
                 servers={"git", "docker"},
             )
         except Exception as exc:  # noqa: BLE001 - surface unexpected failures as degraded
+            message = f"Unexpected failure: {exc}"
             with self._lock:
                 if self._machine.get_state() is not AppState.DEGRADED:
                     self._machine.transition_to(AppState.DEGRADED)
-                self._status_message = f"Unexpected failure: {exc}"
+                self._status_message = message
+            self._speak(message)
             return
         finally:
             with self._lock:
@@ -424,25 +468,31 @@ class RuntimeController:
         self._finish_from_result(result)
 
     def _finish_from_result(self, result: HandleResult) -> None:
+        speak_text: str | None = None
         with self._lock:
             state = self._machine.get_state()
             if result.error == "llm_unavailable":
                 if state is not AppState.DEGRADED:
                     self._machine.transition_to(AppState.DEGRADED)
                 self._status_message = result.message
-                return
-
-            # Soft failures and success both return to idle for another ask
-            if state is AppState.DEGRADED:
+                speak_text = result.message
+            elif state is AppState.DEGRADED:
+                # Already degraded: surface the message without forcing idle
                 self._status_message = result.message
-                return
-            if state is not AppState.IDLE:
-                self._machine.transition_to(AppState.IDLE)
+                speak_text = result.message
+            else:
+                # Soft failures and success both return to idle for another ask
+                if state is not AppState.IDLE:
+                    self._machine.transition_to(AppState.IDLE)
 
-            message = result.message
-            if result.error and result.assistant_text:
-                message = f"{result.message} {result.assistant_text}"
-            if self._last_heard and result.error:
-                message = f"Heard: {self._last_heard} · {message}"
-            self._status_message = message
-            self._pending = None
+                message = result.message
+                if result.error and result.assistant_text:
+                    message = f"{result.message} {result.assistant_text}"
+                if self._last_heard and result.error:
+                    message = f"Heard: {self._last_heard} · {message}"
+                self._status_message = message
+                self._pending = None
+                speak_text = message
+
+        if speak_text is not None:
+            self._speak(speak_text)

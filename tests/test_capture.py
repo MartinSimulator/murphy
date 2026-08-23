@@ -18,6 +18,7 @@ from murphy.mcp.tool_gateway import ToolGateway
 from murphy.orchestrator.fake_llm import FakeLLM
 from murphy.orchestrator.llm import LLMResponse, ToolProposal
 from murphy.voice.capture import CaptureResult, FakeAudioCapture
+from murphy.voice.speech import NullSpeechOutput
 from murphy.voice.stt import StubTranscriber
 
 
@@ -85,6 +86,7 @@ def test_ptt_with_stub_stt_submits_text(
         journal=journal,
         capture=FakeAudioCapture(samples=np.ones(800, dtype=np.float32)),
         transcriber=StubTranscriber("git status"),
+        speech=NullSpeechOutput(),
     )
     try:
         runtime.begin_ptt()
@@ -106,6 +108,7 @@ def test_ptt_empty_audio_returns_idle(
         journal=journal,
         capture=FakeAudioCapture(samples=np.zeros(0, dtype=np.float32)),
         transcriber=StubTranscriber("should not run meaningfully"),
+        speech=NullSpeechOutput(),
     )
     try:
         runtime.begin_ptt()
@@ -137,6 +140,7 @@ def test_ptt_confirmation_phrase(
         journal=journal,
         capture=FakeAudioCapture(samples=np.ones(800, dtype=np.float32)),
         transcriber=StubTranscriber("confirm push"),
+        speech=NullSpeechOutput(),
     )
     try:
         runtime.submit_text("push to main")

@@ -9,12 +9,14 @@ requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "jsonschema>=4.26.0",
+    "kokoro-onnx>=0.6.1",
     "mlx-whisper>=0.4.3",
     "numpy>=2.5.2",
     "pydantic>=2.13.4",
     "pyobjc-framework-Cocoa>=11.0",
     "pyyaml>=6.0.3",
     "sounddevice>=0.5.5",
+    "soundfile>=0.14.0",
 ]
 
 [project.scripts]

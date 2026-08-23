@@ -7,5 +7,7 @@ stt:
   sample_rate: 16000
 
 tts:
-  # Placeholder for Kokoro (Deliverable 5)
+  provider: kokoro
   voice: af_heart
+  speed: 1.0
+  lang: en-us
